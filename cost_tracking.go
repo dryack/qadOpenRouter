@@ -112,16 +112,18 @@ func (ct *CostTracker) GetModelStats(model string) *ModelStats {
 
 // GetAllModelStats returns statistics for all tracked models
 func (ct *CostTracker) GetAllModelStats() map[string]*ModelStats {
+	// First, collect all model names under read lock
 	ct.mu.RLock()
-	defer ct.mu.RUnlock()
-
-	allStats := make(map[string]*ModelStats)
+	models := make([]string, 0, len(ct.results))
 	for model := range ct.results {
-		// Temporarily unlock to call GetModelStats (which needs read lock)
-		ct.mu.RUnlock()
-		stats := ct.GetModelStats(model)
-		ct.mu.RLock()
+		models = append(models, model)
+	}
+	ct.mu.RUnlock()
 
+	// Then call GetModelStats for each model (which acquires its own lock)
+	allStats := make(map[string]*ModelStats)
+	for _, model := range models {
+		stats := ct.GetModelStats(model)
 		if stats != nil {
 			allStats[model] = stats
 		}
