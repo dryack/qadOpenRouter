@@ -36,3 +36,8 @@ penrouter_cache.json
 
 # AI privacy
 .mcp.json
+
+# Private/sensitive files
+ab_testing
+file_cache
+simple_inference
