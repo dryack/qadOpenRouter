@@ -3,17 +3,19 @@ package openrouter
 import (
 	"context"
 	"math"
+	"math/rand"
 	"time"
 )
 
 // RetryConfig holds configuration for retry behavior with exponential backoff.
 // The retry logic implements exponential backoff with jitter to avoid thundering herd problems.
+// Jitter randomizes delays between 50%-100% of the calculated exponential delay.
 //
-// Example retry delays with default configuration:
-//   - Attempt 1: 1 second
-//   - Attempt 2: 2 seconds
-//   - Attempt 3: 4 seconds
-//   - Attempt 4: 8 seconds (but capped at MaxDelay)
+// Example retry delays with default configuration (before jitter):
+//   - Attempt 1: 1 second (actual: 0.5-1.0s with jitter)
+//   - Attempt 2: 2 seconds (actual: 1.0-2.0s with jitter)
+//   - Attempt 3: 4 seconds (actual: 2.0-4.0s with jitter)
+//   - Attempt 4: 8 seconds (actual: 4.0-8.0s with jitter, capped at MaxDelay)
 type RetryConfig struct {
 	// MaxRetries is the maximum number of retry attempts (not including the initial attempt).
 	// Default: 3 (total of 4 attempts including initial)
@@ -71,7 +73,53 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// WithRetry is a client option to enable automatic retries
+// ValidateRetryConfig validates the retry configuration.
+// This function can be used to validate retry configurations before passing them to WithRetry.
+// Returns ValidationError with specific field information for each validation failure.
+//
+// Example:
+//
+//	config := openrouter.RetryConfig{
+//		MaxRetries:   3,
+//		InitialDelay: 1 * time.Second,
+//		MaxDelay:     30 * time.Second,
+//		Multiplier:   2.0,
+//	}
+//	if err := openrouter.ValidateRetryConfig(&config); err != nil {
+//		// Handle validation error
+//	}
+func ValidateRetryConfig(config *RetryConfig) error {
+	if config.MaxRetries < 0 {
+		return &ValidationError{
+			Field:   "MaxRetries",
+			Message: "must be non-negative",
+		}
+	}
+	if config.InitialDelay <= 0 {
+		return &ValidationError{
+			Field:   "InitialDelay",
+			Message: "must be positive",
+		}
+	}
+	if config.MaxDelay < config.InitialDelay {
+		return &ValidationError{
+			Field:   "MaxDelay",
+			Message: "must be greater than or equal to InitialDelay",
+		}
+	}
+	if config.Multiplier <= 0 {
+		return &ValidationError{
+			Field:   "Multiplier",
+			Message: "must be positive",
+		}
+	}
+	return nil
+}
+
+// WithRetry is a client option to enable automatic retries.
+// The configuration will be validated when first used.
+//
+// See also: ValidateRetryConfig for pre-validation, DefaultRetryConfig for sensible defaults
 func WithRetry(config RetryConfig) ClientOption {
 	return func(c *Client) {
 		c.retryConfig = &config
@@ -83,6 +131,11 @@ func retryWithBackoff(ctx context.Context, config *RetryConfig, operation func()
 	if config == nil || config.MaxRetries == 0 {
 		// No retry configured, execute once
 		return operation()
+	}
+
+	// Validate configuration before use
+	if err := ValidateRetryConfig(config); err != nil {
+		return err
 	}
 
 	var lastErr error
@@ -121,14 +174,22 @@ func retryWithBackoff(ctx context.Context, config *RetryConfig, operation func()
 			}
 		}
 
+		// Apply jitter to prevent thundering herd (equal jitter: 50%-100% of calculated delay)
+		// This randomizes retry timing across multiple clients
+		jitter := delay/2 + time.Duration(rand.Int63n(int64(delay/2)))
+		delay = jitter
+
 		// Wait for the delay, respecting context cancellation
+		timer := time.NewTimer(delay)
 		select {
-		case <-time.After(delay):
+		case <-timer.C:
 			// Continue to next retry
 		case <-ctx.Done():
 			// Context canceled, return immediately
+			timer.Stop()
 			return ctx.Err()
 		}
+		timer.Stop()
 	}
 
 	// All retries exhausted

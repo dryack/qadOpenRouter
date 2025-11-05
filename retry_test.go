@@ -290,20 +290,24 @@ func TestRetryWithBackoff_ExponentialBackoff(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// Verify exponential backoff
+	// Verify exponential backoff with jitter
 	if len(delays) < 2 {
 		t.Fatal("Expected at least 2 delays")
 	}
 
-	// First delay should be around InitialDelay
-	if delays[0] < config.InitialDelay {
-		t.Errorf("First delay %v is less than initial delay %v", delays[0], config.InitialDelay)
+	// First delay should be between 50%-100% of InitialDelay (due to jitter)
+	minFirstDelay := config.InitialDelay / 2
+	maxFirstDelay := config.InitialDelay
+	if delays[0] < minFirstDelay || delays[0] > maxFirstDelay {
+		t.Errorf("First delay %v is outside jittered range [%v, %v]", delays[0], minFirstDelay, maxFirstDelay)
 	}
 
-	// Second delay should be roughly double the first (with some tolerance for timing)
-	expectedSecond := config.InitialDelay * 2
-	if delays[1] < expectedSecond || delays[1] > expectedSecond+50*time.Millisecond {
-		t.Logf("Second delay %v is not close to expected %v (allowing 50ms tolerance)", delays[1], expectedSecond)
+	// Second delay should be between 50%-100% of (2 * InitialDelay) due to exponential backoff + jitter
+	// This means between 1.0 * InitialDelay and 2.0 * InitialDelay
+	minSecondDelay := config.InitialDelay
+	maxSecondDelay := config.InitialDelay * 2
+	if delays[1] < minSecondDelay || delays[1] > maxSecondDelay {
+		t.Errorf("Second delay %v is outside jittered range [%v, %v]", delays[1], minSecondDelay, maxSecondDelay)
 	}
 }
 
@@ -332,5 +336,88 @@ func TestRetryWithBackoff_APIError429(t *testing.T) {
 
 	if callCount != 3 {
 		t.Errorf("Expected 3 calls, got %d", callCount)
+	}
+}
+
+func TestValidateRetryConfig_ValidConfig(t *testing.T) {
+	config := DefaultRetryConfig()
+	err := ValidateRetryConfig(&config)
+	if err != nil {
+		t.Errorf("Expected no error for valid config, got %v", err)
+	}
+}
+
+func TestValidateRetryConfig_NegativeMaxRetries(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.MaxRetries = -1
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for negative MaxRetries")
+	}
+}
+
+func TestValidateRetryConfig_ZeroInitialDelay(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.InitialDelay = 0
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for zero InitialDelay")
+	}
+}
+
+func TestValidateRetryConfig_NegativeInitialDelay(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.InitialDelay = -1 * time.Second
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for negative InitialDelay")
+	}
+}
+
+func TestValidateRetryConfig_MaxDelayLessThanInitial(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.InitialDelay = 10 * time.Second
+	config.MaxDelay = 5 * time.Second
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for MaxDelay < InitialDelay")
+	}
+}
+
+func TestValidateRetryConfig_ZeroMultiplier(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.Multiplier = 0
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for zero Multiplier")
+	}
+}
+
+func TestValidateRetryConfig_NegativeMultiplier(t *testing.T) {
+	config := DefaultRetryConfig()
+	config.Multiplier = -1.0
+	err := ValidateRetryConfig(&config)
+	if err == nil {
+		t.Error("Expected error for negative Multiplier")
+	}
+}
+
+func TestRetryWithBackoff_InvalidConfig(t *testing.T) {
+	ctx := context.Background()
+	config := DefaultRetryConfig()
+	config.MaxRetries = -1 // Invalid
+
+	operation := func() error {
+		return nil
+	}
+
+	err := retryWithBackoff(ctx, &config, operation)
+	if err == nil {
+		t.Error("Expected validation error for invalid config")
+	}
+
+	var valErr *ValidationError
+	if !errors.As(err, &valErr) {
+		t.Errorf("Expected ValidationError, got %T", err)
 	}
 }
