@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -55,6 +56,20 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 func WithCacheTTL(ttl time.Duration) ClientOption {
 	return func(c *Client) {
 		c.cache = NewCache(ttl)
+	}
+}
+
+// WithCacheFileMode sets a custom cache with TTL and file permissions.
+// Use this to specify custom file permissions when saving cache to disk.
+//
+// Since: v2.0
+//
+// Example: WithCacheFileMode(1*time.Hour, 0600) for user-only read/write
+//
+// See also: NewCacheWithFileMode, WithCacheTTL for default permissions
+func WithCacheFileMode(ttl time.Duration, fileMode os.FileMode) ClientOption {
+	return func(c *Client) {
+		c.cache = NewCacheWithFileMode(ttl, fileMode)
 	}
 }
 

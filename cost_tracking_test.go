@@ -227,3 +227,140 @@ type testError struct {
 func (e *testError) Error() string {
 	return e.msg
 }
+
+func TestNewCostTrackerWithLimit(t *testing.T) {
+	tracker := NewCostTrackerWithLimit(10)
+
+	// Add 15 results for the same model
+	for i := 0; i < 15; i++ {
+		tracker.Record(InferenceResult{
+			Model:            "test-model",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.001,
+			Timestamp:        time.Now(),
+		})
+	}
+
+	// Should only keep the last 10 results
+	stats := tracker.GetModelStats("test-model")
+	if stats == nil {
+		t.Fatal("Expected stats for test-model")
+	}
+
+	if len(stats.Results) != 10 {
+		t.Errorf("Expected 10 results (limit), got %d", len(stats.Results))
+	}
+
+	if stats.RequestCount != 10 {
+		t.Errorf("Expected RequestCount of 10, got %d", stats.RequestCount)
+	}
+}
+
+func TestNewCostTrackerWithLimit_MultipleModels(t *testing.T) {
+	tracker := NewCostTrackerWithLimit(5)
+
+	// Add results for multiple models
+	for i := 0; i < 10; i++ {
+		tracker.Record(InferenceResult{
+			Model:            "model-a",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.001,
+			Timestamp:        time.Now(),
+		})
+		tracker.Record(InferenceResult{
+			Model:            "model-b",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.002,
+			Timestamp:        time.Now(),
+		})
+	}
+
+	// Each model should have only 5 results
+	statsA := tracker.GetModelStats("model-a")
+	if statsA == nil || len(statsA.Results) != 5 {
+		t.Errorf("Expected 5 results for model-a, got %d", len(statsA.Results))
+	}
+
+	statsB := tracker.GetModelStats("model-b")
+	if statsB == nil || len(statsB.Results) != 5 {
+		t.Errorf("Expected 5 results for model-b, got %d", len(statsB.Results))
+	}
+}
+
+func TestNewCostTrackerWithLimit_UnlimitedWhenZero(t *testing.T) {
+	tracker := NewCostTrackerWithLimit(0)
+
+	// Add many results
+	for i := 0; i < 100; i++ {
+		tracker.Record(InferenceResult{
+			Model:            "test-model",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.001,
+			Timestamp:        time.Now(),
+		})
+	}
+
+	// Should keep all results
+	stats := tracker.GetModelStats("test-model")
+	if stats == nil {
+		t.Fatal("Expected stats for test-model")
+	}
+
+	if len(stats.Results) != 100 {
+		t.Errorf("Expected 100 results (unlimited), got %d", len(stats.Results))
+	}
+}
+
+func TestNewCostTrackerWithLimit_NegativeBecomesUnlimited(t *testing.T) {
+	tracker := NewCostTrackerWithLimit(-1)
+
+	// Add many results
+	for i := 0; i < 50; i++ {
+		tracker.Record(InferenceResult{
+			Model:            "test-model",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.001,
+			Timestamp:        time.Now(),
+		})
+	}
+
+	// Should keep all results (negative treated as unlimited)
+	stats := tracker.GetModelStats("test-model")
+	if stats == nil {
+		t.Fatal("Expected stats for test-model")
+	}
+
+	if len(stats.Results) != 50 {
+		t.Errorf("Expected 50 results (unlimited), got %d", len(stats.Results))
+	}
+}
+
+func TestNewCostTracker_DefaultUnlimited(t *testing.T) {
+	tracker := NewCostTracker()
+
+	// Add many results
+	for i := 0; i < 100; i++ {
+		tracker.Record(InferenceResult{
+			Model:            "test-model",
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			ActualCost:       0.001,
+			Timestamp:        time.Now(),
+		})
+	}
+
+	// Should keep all results (default is unlimited)
+	stats := tracker.GetModelStats("test-model")
+	if stats == nil {
+		t.Fatal("Expected stats for test-model")
+	}
+
+	if len(stats.Results) != 100 {
+		t.Errorf("Expected 100 results (default unlimited), got %d", len(stats.Results))
+	}
+}

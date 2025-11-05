@@ -33,21 +33,63 @@ func (n *NoopLogger) LogResponse(statusCode int, headers http.Header, body []byt
 // LogError does nothing
 func (n *NoopLogger) LogError(err error) {}
 
-// StandardLogger is a simple logger that logs to the standard logger
+// StandardLogger is a simple logger that logs to the standard logger.
+//
+// Body Truncation:
+// By default, request/response bodies are truncated to 500 characters to prevent
+// excessive log output. This is usually sufficient for debugging but may truncate
+// large API payloads. To customize:
+//   - Use NewStandardLoggerWithTruncate(true, true, 1000) for 1000 char limit
+//   - Use NewStandardLoggerWithTruncate(true, true, 0) for unlimited logging
+//   - Adjust TruncateLimit field directly after creation
+//
+// Example:
+//
+//	// Default 500 char truncation
+//	logger := openrouter.NewStandardLogger(true, true)
+//
+//	// Custom 2000 char truncation for large payloads
+//	logger := openrouter.NewStandardLoggerWithTruncate(true, true, 2000)
+//
+//	// Unlimited logging (not recommended for production)
+//	logger := openrouter.NewStandardLoggerWithTruncate(true, true, 0)
 type StandardLogger struct {
 	logger *log.Logger
 	// LogBodies determines whether request/response bodies are logged
 	LogBodies bool
 	// LogHeaders determines whether headers are logged
 	LogHeaders bool
+	// TruncateLimit is the maximum number of characters to log for request/response bodies.
+	// Bodies longer than this will be truncated to prevent excessive log output.
+	// Default: 500 characters. Set to 0 for unlimited logging (not recommended for production).
+	TruncateLimit int
 }
 
-// NewStandardLogger creates a new standard logger writing to stderr
+// NewStandardLogger creates a new standard logger writing to stderr with default truncation (500 chars)
 func NewStandardLogger(logBodies, logHeaders bool) *StandardLogger {
 	return &StandardLogger{
-		logger:     log.New(os.Stderr, "[OpenRouter] ", log.LstdFlags),
-		LogBodies:  logBodies,
-		LogHeaders: logHeaders,
+		logger:        log.New(os.Stderr, "[OpenRouter] ", log.LstdFlags),
+		LogBodies:     logBodies,
+		LogHeaders:    logHeaders,
+		TruncateLimit: 500, // Default truncation limit
+	}
+}
+
+// NewStandardLoggerWithTruncate creates a new standard logger with a custom truncation limit.
+// Set truncateLimit to 0 for unlimited logging (no truncation).
+//
+// Since: v2.0
+//
+// See also: WithStandardLoggerTruncate for using this with the client, NewStandardLogger for default truncation
+func NewStandardLoggerWithTruncate(logBodies, logHeaders bool, truncateLimit int) *StandardLogger {
+	if truncateLimit < 0 {
+		truncateLimit = 500 // Use default for negative values
+	}
+	return &StandardLogger{
+		logger:        log.New(os.Stderr, "[OpenRouter] ", log.LstdFlags),
+		LogBodies:     logBodies,
+		LogHeaders:    logHeaders,
+		TruncateLimit: truncateLimit,
 	}
 }
 
@@ -60,10 +102,10 @@ func (s *StandardLogger) LogRequest(method, url string, headers http.Header, bod
 	}
 
 	if s.LogBodies && len(body) > 0 {
-		// Truncate large bodies
+		// Truncate large bodies if limit is set
 		bodyStr := string(body)
-		if len(bodyStr) > 500 {
-			bodyStr = bodyStr[:500] + "... (truncated)"
+		if s.TruncateLimit > 0 && len(bodyStr) > s.TruncateLimit {
+			bodyStr = bodyStr[:s.TruncateLimit] + "... (truncated)"
 		}
 		s.logger.Printf("  Body: %s", bodyStr)
 	}
@@ -78,10 +120,10 @@ func (s *StandardLogger) LogResponse(statusCode int, headers http.Header, body [
 	}
 
 	if s.LogBodies && len(body) > 0 {
-		// Truncate large bodies
+		// Truncate large bodies if limit is set
 		bodyStr := string(body)
-		if len(bodyStr) > 500 {
-			bodyStr = bodyStr[:500] + "... (truncated)"
+		if s.TruncateLimit > 0 && len(bodyStr) > s.TruncateLimit {
+			bodyStr = bodyStr[:s.TruncateLimit] + "... (truncated)"
 		}
 		s.logger.Printf("  Body: %s", bodyStr)
 	}
@@ -119,9 +161,19 @@ func WithLogger(logger Logger) ClientOption {
 	}
 }
 
-// WithStandardLogger is a convenience option to enable standard logging
+// WithStandardLogger is a convenience option to enable standard logging with default truncation (500 chars)
 func WithStandardLogger(logBodies, logHeaders bool) ClientOption {
 	return WithLogger(NewStandardLogger(logBodies, logHeaders))
+}
+
+// WithStandardLoggerTruncate is a convenience option to enable standard logging with custom truncation limit.
+// Set truncateLimit to 0 for unlimited logging (no truncation).
+//
+// Since: v2.0
+//
+// See also: NewStandardLoggerWithTruncate, WithStandardLogger for default truncation
+func WithStandardLoggerTruncate(logBodies, logHeaders bool, truncateLimit int) ClientOption {
+	return WithLogger(NewStandardLoggerWithTruncate(logBodies, logHeaders, truncateLimit))
 }
 
 // WithCustomLogger is a convenience option for custom logging functions

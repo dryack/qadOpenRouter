@@ -42,23 +42,51 @@ type ModelStats struct {
 
 // CostTracker tracks inference costs for A/B testing
 type CostTracker struct {
-	mu      sync.RWMutex
-	results map[string][]InferenceResult // map[model][]results
+	mu         sync.RWMutex
+	results    map[string][]InferenceResult // map[model][]results
+	maxResults int                          // Maximum results to keep per model (0 = unlimited)
 }
 
-// NewCostTracker creates a new cost tracker
+// NewCostTracker creates a new cost tracker with unlimited result storage
 func NewCostTracker() *CostTracker {
 	return &CostTracker{
-		results: make(map[string][]InferenceResult),
+		results:    make(map[string][]InferenceResult),
+		maxResults: 0, // Unlimited by default for backward compatibility
+	}
+}
+
+// NewCostTrackerWithLimit creates a new cost tracker with a maximum result limit per model.
+// When the limit is reached, oldest results are removed to prevent unbounded memory growth.
+// A limit of 0 means unlimited storage.
+//
+// Since: v2.0
+//
+// Recommended for production environments to prevent memory leaks in long-running applications.
+//
+// See also: NewCostTracker for unlimited tracking (backward compatible default)
+func NewCostTrackerWithLimit(maxResults int) *CostTracker {
+	if maxResults < 0 {
+		maxResults = 0 // Treat negative as unlimited
+	}
+	return &CostTracker{
+		results:    make(map[string][]InferenceResult),
+		maxResults: maxResults,
 	}
 }
 
 // Record adds an inference result to the tracker
+// If maxResults is set and exceeded, oldest results are removed to maintain the limit
 func (ct *CostTracker) Record(result InferenceResult) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 
 	ct.results[result.Model] = append(ct.results[result.Model], result)
+
+	// Enforce maximum results limit if set
+	if ct.maxResults > 0 && len(ct.results[result.Model]) > ct.maxResults {
+		// Keep only the most recent maxResults entries
+		ct.results[result.Model] = ct.results[result.Model][len(ct.results[result.Model])-ct.maxResults:]
+	}
 }
 
 // GetModelStats returns aggregated statistics for a specific model
@@ -110,23 +138,57 @@ func (ct *CostTracker) GetModelStats(model string) *ModelStats {
 	return stats
 }
 
-// GetAllModelStats returns statistics for all tracked models
+// GetAllModelStats returns statistics for all tracked models.
+// This method is optimized to compute all stats under a single read lock.
 func (ct *CostTracker) GetAllModelStats() map[string]*ModelStats {
-	// First, collect all model names under read lock
 	ct.mu.RLock()
-	models := make([]string, 0, len(ct.results))
-	for model := range ct.results {
-		models = append(models, model)
-	}
-	ct.mu.RUnlock()
+	defer ct.mu.RUnlock()
 
-	// Then call GetModelStats for each model (which acquires its own lock)
-	allStats := make(map[string]*ModelStats)
-	for _, model := range models {
-		stats := ct.GetModelStats(model)
-		if stats != nil {
-			allStats[model] = stats
+	allStats := make(map[string]*ModelStats, len(ct.results))
+
+	// Process all models under a single read lock for better performance
+	for model, results := range ct.results {
+		if len(results) == 0 {
+			continue
 		}
+
+		stats := &ModelStats{
+			Model:      model,
+			Results:    results,
+			MinLatency: time.Hour, // Start with a high value
+		}
+
+		var totalLatency time.Duration
+
+		for _, r := range results {
+			stats.RequestCount++
+
+			if r.Error != nil {
+				stats.ErrorCount++
+				continue
+			}
+
+			stats.SuccessCount++
+			stats.TotalPromptTokens += r.PromptTokens
+			stats.TotalCompletionTokens += r.CompletionTokens
+			stats.TotalTokens += r.TotalTokens
+			stats.TotalEstimatedCost += r.EstimatedCost
+			stats.TotalActualCost += r.ActualCost
+
+			totalLatency += r.Latency
+			if r.Latency < stats.MinLatency {
+				stats.MinLatency = r.Latency
+			}
+			if r.Latency > stats.MaxLatency {
+				stats.MaxLatency = r.Latency
+			}
+		}
+
+		if stats.SuccessCount > 0 {
+			stats.AvgLatency = totalLatency / time.Duration(stats.SuccessCount)
+		}
+
+		allStats[model] = stats
 	}
 
 	return allStats

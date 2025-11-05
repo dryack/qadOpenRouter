@@ -304,3 +304,130 @@ func TestPrettyJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestNewStandardLoggerWithTruncate_CustomLimit(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewStandardLoggerWithTruncate(true, false, 100)
+	logger.logger.SetOutput(&buf)
+
+	// Create body longer than limit
+	longBody := make([]byte, 200)
+	for i := range longBody {
+		longBody[i] = 'A'
+	}
+
+	logger.LogRequest("POST", "https://api.example.com/test", nil, longBody)
+
+	output := buf.String()
+
+	// Should be truncated at 100 chars
+	if !strings.Contains(output, "... (truncated)") {
+		t.Error("Expected output to contain truncation message")
+	}
+
+	// Count 'A's in output - should be 100
+	count := strings.Count(output, "A")
+	if count != 100 {
+		t.Errorf("Expected 100 'A' characters, got %d", count)
+	}
+}
+
+func TestNewStandardLoggerWithTruncate_Unlimited(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewStandardLoggerWithTruncate(true, false, 0) // 0 = unlimited
+	logger.logger.SetOutput(&buf)
+
+	// Create large body
+	longBody := make([]byte, 1000)
+	for i := range longBody {
+		longBody[i] = 'B'
+	}
+
+	logger.LogRequest("POST", "https://api.example.com/test", nil, longBody)
+
+	output := buf.String()
+
+	// Should NOT be truncated
+	if strings.Contains(output, "... (truncated)") {
+		t.Error("Expected output to NOT contain truncation message for unlimited logging")
+	}
+
+	// Should have all 1000 'B's (plus one from "Body:" in log format)
+	count := strings.Count(output, "B")
+	if count < 1000 {
+		t.Errorf("Expected at least 1000 'B' characters, got %d", count)
+	}
+}
+
+func TestNewStandardLoggerWithTruncate_NegativeBecomesDefault(t *testing.T) {
+	logger := NewStandardLoggerWithTruncate(true, false, -1)
+
+	if logger.TruncateLimit != 500 {
+		t.Errorf("Expected TruncateLimit to be 500 (default), got %d", logger.TruncateLimit)
+	}
+}
+
+func TestNewStandardLogger_DefaultTruncate(t *testing.T) {
+	logger := NewStandardLogger(true, true)
+
+	if logger.TruncateLimit != 500 {
+		t.Errorf("Expected default TruncateLimit to be 500, got %d", logger.TruncateLimit)
+	}
+}
+
+func TestWithStandardLoggerTruncate(t *testing.T) {
+	client := NewClient(
+		WithAPIKey("test-key"),
+		WithStandardLoggerTruncate(true, true, 200),
+	)
+
+	stdLogger, ok := client.logger.(*StandardLogger)
+	if !ok {
+		t.Fatal("Expected logger to be *StandardLogger")
+	}
+
+	if stdLogger.TruncateLimit != 200 {
+		t.Errorf("Expected TruncateLimit to be 200, got %d", stdLogger.TruncateLimit)
+	}
+
+	if !stdLogger.LogBodies {
+		t.Error("Expected LogBodies to be true")
+	}
+
+	if !stdLogger.LogHeaders {
+		t.Error("Expected LogHeaders to be true")
+	}
+}
+
+func TestStandardLogger_TruncateLimitRespected(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewStandardLoggerWithTruncate(true, false, 50)
+	logger.logger.SetOutput(&buf)
+
+	// Test both request and response truncation
+	longBody := []byte(strings.Repeat("X", 100))
+
+	logger.LogRequest("GET", "https://example.com", nil, longBody)
+	requestOutput := buf.String()
+
+	buf.Reset()
+
+	logger.LogResponse(200, nil, longBody, time.Second)
+	responseOutput := buf.String()
+
+	// Both should be truncated
+	if !strings.Contains(requestOutput, "... (truncated)") {
+		t.Error("Expected request to be truncated")
+	}
+	if !strings.Contains(responseOutput, "... (truncated)") {
+		t.Error("Expected response to be truncated")
+	}
+
+	// Both should have exactly 50 X's
+	if strings.Count(requestOutput, "X") != 50 {
+		t.Errorf("Expected 50 X's in request, got %d", strings.Count(requestOutput, "X"))
+	}
+	if strings.Count(responseOutput, "X") != 50 {
+		t.Errorf("Expected 50 X's in response, got %d", strings.Count(responseOutput, "X"))
+	}
+}

@@ -295,16 +295,87 @@ fmt.Printf("Success rate: %.1f%%\n", stats.SuccessRate())
 
 See `example/ab_testing/main.go` for a complete A/B testing example.
 
+### Memory-Bounded Cost Tracking (v2.0+)
+
+Prevent unbounded memory growth in production environments:
+
+```go
+// Unlimited tracking (default, backward compatible)
+tracker := openrouter.NewCostTracker()
+
+// Bounded tracking (recommended for production)
+// Keeps only the last 1000 results per model
+tracker := openrouter.NewCostTrackerWithLimit(1000)
+```
+
+The bounded tracker automatically removes oldest results when the limit is reached, using a sliding window approach to maintain recent data while preventing memory leaks in long-running applications.
+
+### Configuration Validation (v2.0+)
+
+Validate configurations before use:
+
+```go
+// Validate retry configuration
+retryConfig := openrouter.RetryConfig{
+    MaxRetries:   5,
+    InitialDelay: 1 * time.Second,
+    MaxDelay:     30 * time.Second,
+    Multiplier:   2.0,
+}
+
+if err := openrouter.ValidateRetryConfig(&retryConfig); err != nil {
+    log.Fatalf("Invalid retry config: %v", err)
+}
+
+// Validate cached models
+cached := &openrouter.CachedModels{...}
+if err := openrouter.ValidateCachedModels(cached); err != nil {
+    log.Fatalf("Invalid cache: %v", err)
+}
+```
+
+### Custom Error Types (v2.0+)
+
+Handle cache validation errors programmatically:
+
+```go
+err := client.LoadCacheFromFile("cache.json")
+if err != nil {
+    if errors.Is(err, openrouter.ErrNilCache) {
+        log.Println("Cache is nil")
+    } else if errors.Is(err, openrouter.ErrInvalidExpiration) {
+        log.Println("Cache has invalid expiration")
+    }
+}
+```
+
+Available cache validation errors:
+- `ErrNilCache` - cached models pointer is nil
+- `ErrNilModels` - models array is nil
+- `ErrZeroFetchedAt` - FetchedAt timestamp is zero/unset
+- `ErrZeroExpiresAt` - ExpiresAt timestamp is zero/unset
+- `ErrInvalidExpiration` - ExpiresAt is before FetchedAt
+
 ## API Reference
 
 ### Client Options
 
-- `WithCacheTTL(ttl time.Duration)` - Set cache time-to-live
-- `WithTimeout(timeout time.Duration)` - Set HTTP request timeout
-- `WithAPIKey(apiKey string)` - Set OpenRouter API key
+**Caching:**
+- `WithCacheTTL(ttl time.Duration)` - Set cache time-to-live (default 1 hour)
+- `WithCacheFileMode(ttl time.Duration, fileMode os.FileMode)` - **(v2.0+)** Set cache TTL with custom file permissions (e.g., 0600 for user-only access)
+
+**Network:**
+- `WithTimeout(timeout time.Duration)` - Set HTTP request timeout (default 30s)
+- `WithAPIKey(apiKey string)` - Set OpenRouter API key for authenticated requests
 - `WithBaseURL(baseURL string)` - Set custom API base URL
 - `WithHTTPClient(client *http.Client)` - Use custom HTTP client
 - `WithRateLimiter(limiter *rate.Limiter)` - Set rate limiter to prevent API abuse
+- `WithRetry(config RetryConfig)` - Enable automatic retry with exponential backoff
+
+**Logging:**
+- `WithStandardLogger(logBodies, logHeaders bool)` - Enable standard logging to stderr (500 char truncation)
+- `WithStandardLoggerTruncate(logBodies, logHeaders bool, truncateLimit int)` - **(v2.0+)** Enable logging with custom truncation limit (0 for unlimited)
+- `WithCustomLogger(logFn func(string, ...interface{}))` - Use custom logging function
 
 ### Client Methods
 

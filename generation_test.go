@@ -301,3 +301,55 @@ func TestGetGeneration_WithOptionalFields(t *testing.T) {
 		t.Errorf("Expected usage 0.5, got %f", stats.Usage)
 	}
 }
+
+func TestIsNotFoundError_APIError404(t *testing.T) {
+	err := &APIError{
+		StatusCode: http.StatusNotFound,
+		Message:    "Not found",
+		Err:        ErrNotFound,
+	}
+
+	if !isNotFoundError(err) {
+		t.Error("Expected isNotFoundError to return true for APIError with 404 status")
+	}
+}
+
+func TestIsNotFoundError_APIErrorOtherStatus(t *testing.T) {
+	err := &APIError{
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Server error",
+		Err:        ErrServerError,
+	}
+
+	if isNotFoundError(err) {
+		t.Error("Expected isNotFoundError to return false for APIError with 500 status")
+	}
+}
+
+func TestIsNotFoundError_ErrNotFound(t *testing.T) {
+	if !isNotFoundError(ErrNotFound) {
+		t.Error("Expected isNotFoundError to return true for ErrNotFound")
+	}
+}
+
+func TestIsNotFoundError_WrappedErrNotFound(t *testing.T) {
+	wrappedErr := errors.Join(ErrNotFound, errors.New("additional context"))
+
+	if !isNotFoundError(wrappedErr) {
+		t.Error("Expected isNotFoundError to return true for wrapped ErrNotFound")
+	}
+}
+
+func TestIsNotFoundError_OtherError(t *testing.T) {
+	err := errors.New("some other error")
+
+	if isNotFoundError(err) {
+		t.Error("Expected isNotFoundError to return false for non-404 error")
+	}
+}
+
+func TestIsNotFoundError_Nil(t *testing.T) {
+	if isNotFoundError(nil) {
+		t.Error("Expected isNotFoundError to return false for nil error")
+	}
+}

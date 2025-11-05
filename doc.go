@@ -72,6 +72,24 @@
 //		}
 //	}
 //
+// Cache validation errors for programmatic error handling:
+//
+//	err := client.LoadCacheFromFile("cache.json")
+//	if err != nil {
+//		if errors.Is(err, openrouter.ErrNilCache) {
+//			fmt.Println("Cache is nil")
+//		} else if errors.Is(err, openrouter.ErrInvalidExpiration) {
+//			fmt.Println("Cache has invalid expiration time")
+//		}
+//	}
+//
+// Available cache validation errors:
+//   - ErrNilCache: cached models pointer is nil
+//   - ErrNilModels: models array is nil
+//   - ErrZeroFetchedAt: FetchedAt timestamp is zero/unset
+//   - ErrZeroExpiresAt: ExpiresAt timestamp is zero/unset
+//   - ErrInvalidExpiration: ExpiresAt is before FetchedAt
+//
 // # Automatic Retry
 //
 // The client automatically retries transient errors (network errors, 5xx responses,
@@ -81,19 +99,36 @@
 //	retryConfig.MaxRetries = 5
 //	retryConfig.InitialDelay = 2 * time.Second
 //
+//	// Validate configuration before use (since v2.0)
+//	if err := openrouter.ValidateRetryConfig(&retryConfig); err != nil {
+//		log.Fatal(err)
+//	}
+//
 //	client := openrouter.NewClient(
 //		openrouter.WithAPIKey("your-api-key"),
-//		openrouter.WithRetryConfig(&retryConfig),
+//		openrouter.WithRetry(retryConfig),
 //	)
 //
 // # Logging
 //
 // Enable request/response logging for debugging:
 //
-//	// Standard logger to stderr
+//	// Standard logger to stderr (default 500 char truncation)
 //	client := openrouter.NewClient(
 //		openrouter.WithAPIKey("your-api-key"),
 //		openrouter.WithStandardLogger(true, true),  // Log bodies and headers
+//	)
+//
+//	// Custom truncation for large payloads (since v2.0)
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-api-key"),
+//		openrouter.WithStandardLoggerTruncate(true, true, 2000),  // 2000 char limit
+//	)
+//
+//	// Unlimited logging for debugging (not recommended for production)
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-api-key"),
+//		openrouter.WithStandardLoggerTruncate(true, true, 0),  // No truncation
 //	)
 //
 //	// Custom logger
@@ -137,7 +172,30 @@
 //		log.Fatal(err)
 //	}
 //
-//	tracker.RecordCompletion(model, stats.TokensPrompt, stats.TokensCompletion, stats.TotalCost)
+//	// Record the result for cost tracking
+//	tracker.Record(openrouter.InferenceResult{
+//		Model:            req.Model,
+//		GenerationID:     resp.ID,
+//		PromptTokens:     stats.TokensPrompt,
+//		CompletionTokens: stats.TokensCompletion,
+//		TotalTokens:      stats.TokensPrompt + stats.TokensCompletion,
+//		ActualCost:       stats.TotalCost,
+//		Timestamp:        time.Now(),
+//	})
+//
+// # Memory-Bounded Cost Tracking
+//
+// Prevent unbounded memory growth in production (since v2.0):
+//
+//	// Unlimited tracking (default, backward compatible)
+//	tracker := openrouter.NewCostTracker()
+//
+//	// Bounded tracking (recommended for production)
+//	// Keeps only the last 1000 results per model
+//	tracker := openrouter.NewCostTrackerWithLimit(1000)
+//
+// The bounded tracker automatically removes oldest results when the limit is reached,
+// using a sliding window approach to maintain recent data while preventing memory leaks.
 //
 // # Context Support
 //
@@ -166,6 +224,26 @@
 //
 //	// Load cache from file
 //	client.LoadCacheFromFile("cache.json")
+//
+//	// Validate cache data before loading (since v2.0)
+//	cached := &openrouter.CachedModels{...}
+//	if err := openrouter.ValidateCachedModels(cached); err != nil {
+//		log.Printf("Invalid cache: %v", err)
+//	}
+//
+// # Advanced Cache Configuration
+//
+// Configure custom file permissions for sensitive cache data (since v2.0):
+//
+//	// Default permissions (0644 - readable by all users)
+//	client := openrouter.NewClient(
+//		openrouter.WithCacheTTL(1 * time.Hour),
+//	)
+//
+//	// Secure permissions (0600 - user-only read/write)
+//	client := openrouter.NewClient(
+//		openrouter.WithCacheFileMode(1*time.Hour, 0600),
+//	)
 //
 // # Security Best Practices
 //
