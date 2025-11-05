@@ -3,6 +3,7 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,8 +28,10 @@ type Client struct {
 	baseURL     string
 	httpClient  *http.Client
 	cache       *Cache
-	apiKey      string       // Optional API key for authenticated requests
+	apiKey      string        // Optional API key for authenticated requests
 	rateLimiter *rate.Limiter // Optional rate limiter for API calls
+	retryConfig *RetryConfig  // Optional retry configuration for transient errors
+	logger      Logger        // Optional logger for request/response logging
 }
 
 // ClientOption is a function that configures a Client
@@ -105,8 +108,13 @@ func (c *Client) GetModels(ctx context.Context) ([]Model, error) {
 		return cached.Models, nil
 	}
 
-	// Fetch from API
-	models, err := c.fetchModels(ctx)
+	// Fetch from API with retry
+	var models []Model
+	err := retryWithBackoff(ctx, c.retryConfig, func() error {
+		var fetchErr error
+		models, fetchErr = c.fetchModels(ctx)
+		return fetchErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +127,13 @@ func (c *Client) GetModels(ctx context.Context) ([]Model, error) {
 
 // GetModelsFresh forces a fresh fetch from the API, bypassing cache
 func (c *Client) GetModelsFresh(ctx context.Context) ([]Model, error) {
-	models, err := c.fetchModels(ctx)
+	// Fetch from API with retry
+	var models []Model
+	err := retryWithBackoff(ctx, c.retryConfig, func() error {
+		var fetchErr error
+		models, fetchErr = c.fetchModels(ctx)
+		return fetchErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +149,15 @@ func (c *Client) fetchModels(ctx context.Context) ([]Model, error) {
 	// Apply rate limiting if configured
 	if c.rateLimiter != nil {
 		if err := c.rateLimiter.Wait(ctx); err != nil {
+			// Check if context was canceled
+			if ctx.Err() != nil {
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return nil, ErrContextCanceled
+				}
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return nil, ErrContextDeadlineExceeded
+				}
+			}
 			return nil, fmt.Errorf("rate limit wait failed: %w", err)
 		}
 	}
@@ -156,24 +179,60 @@ func (c *Client) fetchModels(ctx context.Context) ([]Model, error) {
 
 	req.Header.Set("Accept", "application/json")
 
+	// Log request
+	c.logRequest(req.Method, req.URL.String(), req.Header, nil)
+
+	// Execute request and track duration
+	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
+	duration := time.Since(startTime)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch models: %w", err)
+		// Log error
+		c.logError(err)
+
+		// Check for context errors
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, ErrContextCanceled
+			}
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, ErrContextDeadlineExceeded
+			}
+		}
+		// Network error
+		return nil, &NetworkError{
+			Message: "failed to fetch models",
+			Err:     err,
+		}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		c.logError(err)
+		return nil, &NetworkError{
+			Message: "failed to read response body",
+			Err:     err,
+		}
 	}
 
+	// Log response
+	c.logResponse(resp.StatusCode, resp.Header, body, duration)
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		apiErr := newAPIError(resp.StatusCode, string(body))
+		c.logError(apiErr)
+		return nil, apiErr
 	}
 
 	var modelsResp ModelsResponse
 	if err := json.Unmarshal(body, &modelsResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("failed to unmarshal response: %v", err),
+			Err:        ErrInvalidRequest,
+		}
 	}
 
 	return modelsResp.Data, nil

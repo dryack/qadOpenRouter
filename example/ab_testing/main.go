@@ -18,7 +18,7 @@ func main() {
 		log.Fatal("OPENROUTER_API_KEY environment variable is required")
 	}
 
-	fmt.Println("=== OpenRouter A/B Testing Demo ===\n")
+	fmt.Println("=== OpenRouter A/B Testing Demo ===")
 
 	// Create context for all API calls
 	ctx := context.Background()
@@ -76,7 +76,7 @@ func main() {
 	fmt.Print(report.FormatReport())
 
 	// Show individual model details
-	fmt.Println("=== Detailed Model Analysis ===\n")
+	fmt.Println("=== Detailed Model Analysis ===")
 	for _, model := range modelsToTest {
 		stats := tracker.GetModelStats(model)
 		if stats == nil {

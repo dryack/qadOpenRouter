@@ -3,6 +3,7 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -104,8 +105,9 @@ func TestGetGeneration_MissingID(t *testing.T) {
 		t.Fatal("Expected error for missing generation ID")
 	}
 
-	if err.Error() != "generation ID is required" {
-		t.Errorf("Expected 'generation ID is required' error, got %v", err)
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Field != "generationID" {
+		t.Errorf("Expected ValidationError for field 'generationID', got %v", err)
 	}
 }
 

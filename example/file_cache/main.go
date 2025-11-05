@@ -13,7 +13,7 @@ import (
 const cacheFilePath = "openrouter_cache.json"
 
 func main() {
-	fmt.Println("=== File-Based Cache Example ===\n")
+	fmt.Println("=== File-Based Cache Example ===")
 
 	// Create context for API calls
 	ctx := context.Background()

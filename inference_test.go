@@ -3,6 +3,7 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -117,8 +118,9 @@ func TestCreateChatCompletion_MissingModel(t *testing.T) {
 		t.Fatal("Expected error for missing model")
 	}
 
-	if err.Error() != "model is required" {
-		t.Errorf("Expected 'model is required' error, got %v", err)
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Field != "model" {
+		t.Errorf("Expected ValidationError for field 'model', got %v", err)
 	}
 }
 
@@ -136,8 +138,9 @@ func TestCreateChatCompletion_MissingMessages(t *testing.T) {
 		t.Fatal("Expected error for missing messages")
 	}
 
-	if err.Error() != "at least one message is required" {
-		t.Errorf("Expected 'at least one message is required' error, got %v", err)
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Field != "messages" {
+		t.Errorf("Expected ValidationError for field 'messages', got %v", err)
 	}
 }
 
@@ -165,8 +168,9 @@ func TestCreateChatCompletion_MissingAPIKey(t *testing.T) {
 		t.Fatal("Expected error for missing API key")
 	}
 
-	if err.Error() != "API key is required for chat completions" {
-		t.Errorf("Expected 'API key is required' error, got %v", err)
+	var validationErr *ValidationError
+	if !errors.As(err, &validationErr) || validationErr.Field != "apiKey" {
+		t.Errorf("Expected ValidationError for field 'apiKey', got %v", err)
 	}
 }
 

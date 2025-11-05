@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // ChatCompletionRequest represents a request to the /chat/completions endpoint
@@ -96,19 +98,51 @@ type Usage struct {
 	TotalTokens      int `json:"total_tokens"`
 }
 
-// CreateChatCompletion sends a chat completion request
+// CreateChatCompletion sends a chat completion request with automatic retry on transient errors
 func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	if req.Model == "" {
-		return nil, fmt.Errorf("model is required")
+		return nil, &ValidationError{
+			Field:   "model",
+			Message: "model is required",
+		}
 	}
 
 	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("at least one message is required")
+		return nil, &ValidationError{
+			Field:   "messages",
+			Message: "at least one message is required",
+		}
 	}
+
+	// Execute with retry
+	var completion *ChatCompletionResponse
+	err := retryWithBackoff(ctx, c.retryConfig, func() error {
+		var execErr error
+		completion, execErr = c.executeChatCompletion(ctx, req)
+		return execErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return completion, nil
+}
+
+// executeChatCompletion performs the actual chat completion request (internal, for retry)
+func (c *Client) executeChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 
 	// Apply rate limiting if configured
 	if c.rateLimiter != nil {
 		if err := c.rateLimiter.Wait(ctx); err != nil {
+			// Check if context was canceled
+			if ctx.Err() != nil {
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return nil, ErrContextCanceled
+				}
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return nil, ErrContextDeadlineExceeded
+				}
+			}
 			return nil, fmt.Errorf("rate limit wait failed: %w", err)
 		}
 	}
@@ -132,29 +166,68 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 	if c.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	} else {
-		return nil, fmt.Errorf("API key is required for chat completions")
+		return nil, &ValidationError{
+			Field:   "apiKey",
+			Message: "API key is required for chat completions",
+		}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
 
+	// Log request
+	c.logRequest(httpReq.Method, httpReq.URL.String(), httpReq.Header, jsonData)
+
+	// Execute request and track duration
+	startTime := time.Now()
 	resp, err := c.httpClient.Do(httpReq)
+	duration := time.Since(startTime)
+
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		// Log error
+		c.logError(err)
+
+		// Check for context errors
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, ErrContextCanceled
+			}
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, ErrContextDeadlineExceeded
+			}
+		}
+		// Network error
+		return nil, &NetworkError{
+			Message: "chat completion request failed",
+			Err:     err,
+		}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		c.logError(err)
+		return nil, &NetworkError{
+			Message: "failed to read response",
+			Err:     err,
+		}
 	}
 
+	// Log response
+	c.logResponse(resp.StatusCode, resp.Header, body, duration)
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		apiErr := newAPIError(resp.StatusCode, string(body))
+		c.logError(apiErr)
+		return nil, apiErr
 	}
 
 	var completion ChatCompletionResponse
 	if err := json.Unmarshal(body, &completion); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("failed to unmarshal response: %v", err),
+			Err:        ErrInvalidRequest,
+		}
 	}
 
 	return &completion, nil

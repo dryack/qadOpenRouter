@@ -3,9 +3,11 @@ package openrouter
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // GenerationStats represents detailed statistics for a generation
@@ -32,16 +34,45 @@ type GenerationResponse struct {
 	Data GenerationStats `json:"data"`
 }
 
-// GetGeneration retrieves detailed statistics for a specific generation
+// GetGeneration retrieves detailed statistics for a specific generation with automatic retry
 // Use the ID from the ChatCompletionResponse to get actual token counts and costs
 func (c *Client) GetGeneration(ctx context.Context, generationID string) (*GenerationStats, error) {
 	if generationID == "" {
-		return nil, fmt.Errorf("generation ID is required")
+		return nil, &ValidationError{
+			Field:   "generationID",
+			Message: "generation ID is required",
+		}
 	}
+
+	// Execute with retry
+	var stats *GenerationStats
+	err := retryWithBackoff(ctx, c.retryConfig, func() error {
+		var execErr error
+		stats, execErr = c.executeGetGeneration(ctx, generationID)
+		return execErr
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+// executeGetGeneration performs the actual generation stats request (internal, for retry)
+func (c *Client) executeGetGeneration(ctx context.Context, generationID string) (*GenerationStats, error) {
 
 	// Apply rate limiting if configured
 	if c.rateLimiter != nil {
 		if err := c.rateLimiter.Wait(ctx); err != nil {
+			// Check if context was canceled
+			if ctx.Err() != nil {
+				if errors.Is(ctx.Err(), context.Canceled) {
+					return nil, ErrContextCanceled
+				}
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					return nil, ErrContextDeadlineExceeded
+				}
+			}
 			return nil, fmt.Errorf("rate limit wait failed: %w", err)
 		}
 	}
@@ -62,24 +93,60 @@ func (c *Client) GetGeneration(ctx context.Context, generationID string) (*Gener
 	}
 	req.Header.Set("Accept", "application/json")
 
+	// Log request
+	c.logRequest(req.Method, req.URL.String(), req.Header, nil)
+
+	// Execute request and track duration
+	startTime := time.Now()
 	resp, err := c.httpClient.Do(req)
+	duration := time.Since(startTime)
+
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		// Log error
+		c.logError(err)
+
+		// Check for context errors
+		if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, ErrContextCanceled
+			}
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, ErrContextDeadlineExceeded
+			}
+		}
+		// Network error
+		return nil, &NetworkError{
+			Message: "generation stats request failed",
+			Err:     err,
+		}
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		c.logError(err)
+		return nil, &NetworkError{
+			Message: "failed to read response",
+			Err:     err,
+		}
 	}
 
+	// Log response
+	c.logResponse(resp.StatusCode, resp.Header, body, duration)
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		apiErr := newAPIError(resp.StatusCode, string(body))
+		c.logError(apiErr)
+		return nil, apiErr
 	}
 
 	var genResp GenerationResponse
 	if err := json.Unmarshal(body, &genResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("failed to unmarshal response: %v", err),
+			Err:        ErrInvalidRequest,
+		}
 	}
 
 	return &genResp.Data, nil
