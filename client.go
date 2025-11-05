@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -22,10 +24,11 @@ const (
 
 // Client is the main OpenRouter API client
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	cache      *Cache
-	apiKey     string // Optional API key for authenticated requests
+	baseURL     string
+	httpClient  *http.Client
+	cache       *Cache
+	apiKey      string       // Optional API key for authenticated requests
+	rateLimiter *rate.Limiter // Optional rate limiter for API calls
 }
 
 // ClientOption is a function that configures a Client
@@ -62,7 +65,18 @@ func WithAPIKey(apiKey string) ClientOption {
 // WithTimeout sets a custom HTTP timeout
 func WithTimeout(timeout time.Duration) ClientOption {
 	return func(c *Client) {
+		if c.httpClient == nil {
+			c.httpClient = &http.Client{}
+		}
 		c.httpClient.Timeout = timeout
+	}
+}
+
+// WithRateLimiter sets a rate limiter for API calls
+// Example: WithRateLimiter(rate.NewLimiter(rate.Every(time.Second), 10)) // 10 requests per second
+func WithRateLimiter(limiter *rate.Limiter) ClientOption {
+	return func(c *Client) {
+		c.rateLimiter = limiter
 	}
 }
 
@@ -118,6 +132,13 @@ func (c *Client) GetModelsFresh(ctx context.Context) ([]Model, error) {
 
 // fetchModels performs the actual HTTP request to fetch models
 func (c *Client) fetchModels(ctx context.Context) ([]Model, error) {
+	// Apply rate limiting if configured
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limit wait failed: %w", err)
+		}
+	}
+
 	url := fmt.Sprintf("%s/models", c.baseURL)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)

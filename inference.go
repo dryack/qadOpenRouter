@@ -106,6 +106,13 @@ func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionReq
 		return nil, fmt.Errorf("at least one message is required")
 	}
 
+	// Apply rate limiting if configured
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limit wait failed: %w", err)
+		}
+	}
+
 	url := fmt.Sprintf("%s/chat/completions", c.baseURL)
 
 	jsonData, err := json.Marshal(req)

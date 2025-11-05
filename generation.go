@@ -39,6 +39,13 @@ func (c *Client) GetGeneration(ctx context.Context, generationID string) (*Gener
 		return nil, fmt.Errorf("generation ID is required")
 	}
 
+	// Apply rate limiting if configured
+	if c.rateLimiter != nil {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limit wait failed: %w", err)
+		}
+	}
+
 	url := fmt.Sprintf("%s/generation?id=%s", c.baseURL, generationID)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
