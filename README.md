@@ -49,7 +49,7 @@ models, err := client.GetModels(ctx)
 ## Installation
 
 ```bash
-go get github.com/dryack/openRouterPricing
+go get github.com/dryack/qadOpenRouter
 ```
 
 ## Quick Start
@@ -62,7 +62,7 @@ import (
     "fmt"
     "log"
 
-    openrouter "github.com/dryack/openRouterPricing"
+    openrouter "github.com/dryack/qadOpenRouter"
 )
 
 func main() {
@@ -528,7 +528,7 @@ import (
     "log"
     "os"
 
-    openrouter "github.com/dryack/openRouterPricing"
+    openrouter "github.com/dryack/qadOpenRouter"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	openrouter "github.com/dryack/openRouterPricing"
+	openrouter "github.com/dryack/qadOpenRouter"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	openrouter "github.com/dryack/openRouterPricing"
+	openrouter "github.com/dryack/qadOpenRouter"
 	// "golang.org/x/time/rate" // Uncomment if using rate limiting
 )
 

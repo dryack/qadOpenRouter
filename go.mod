@@ -1,4 +1,4 @@
-module github.com/dryack/openRouterPricing
+module github.com/dryack/qadOpenRouter
 
 go 1.25.2
 

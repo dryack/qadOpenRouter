@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	openrouter "github.com/dryack/openRouterPricing"
+	openrouter "github.com/dryack/qadOpenRouter"
 )
 
 // displayRequest shows the request being sent to the API

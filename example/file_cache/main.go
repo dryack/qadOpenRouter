@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	openrouter "github.com/dryack/openRouterPricing"
+	openrouter "github.com/dryack/qadOpenRouter"
 )
 
 const cacheFilePath = "openrouter_cache.json"
