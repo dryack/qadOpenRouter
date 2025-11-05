@@ -424,6 +424,104 @@ go run main.go
 8. **Get Actual Costs**: Use `GetGenerationWithRetry()` to retrieve actual costs after inference
 9. **File Caching**: Save cache to disk for faster startup and reduced API calls
 
+## Security Best Practices
+
+### API Key Handling
+
+Your OpenRouter API key provides access to paid services and should be protected:
+
+**DO:**
+- ✅ Store API keys in environment variables: `os.Getenv("OPENROUTER_API_KEY")`
+- ✅ Use secure secret management services (AWS Secrets Manager, HashiCorp Vault, etc.) in production
+- ✅ Restrict API key permissions to minimum required scope
+- ✅ Rotate API keys periodically
+- ✅ Use different API keys for development, staging, and production environments
+- ✅ Add API keys to `.gitignore` to prevent accidental commits
+- ✅ Implement rate limiting to prevent API abuse
+
+**DON'T:**
+- ❌ Hard-code API keys in source code
+- ❌ Commit API keys to version control
+- ❌ Share API keys via email or messaging apps
+- ❌ Expose API keys in client-side code (web browsers, mobile apps)
+- ❌ Log API keys in application logs
+- ❌ Use production API keys for development/testing
+
+### Example: Secure API Key Loading
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+
+    openrouter "github.com/dryack/openRouterPricing"
+)
+
+func main() {
+    // Load API key from environment variable
+    apiKey := os.Getenv("OPENROUTER_API_KEY")
+    if apiKey == "" {
+        log.Fatal("OPENROUTER_API_KEY environment variable is required")
+    }
+
+    // Create client with API key
+    client := openrouter.NewClient(
+        openrouter.WithAPIKey(apiKey),
+    )
+
+    // Use client...
+}
+```
+
+### Setting Environment Variables
+
+**Linux/macOS:**
+```bash
+export OPENROUTER_API_KEY="your-api-key-here"
+```
+
+**Windows (Command Prompt):**
+```cmd
+set OPENROUTER_API_KEY=your-api-key-here
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:OPENROUTER_API_KEY="your-api-key-here"
+```
+
+**Docker:**
+```dockerfile
+ENV OPENROUTER_API_KEY=""
+```
+
+Or pass at runtime:
+```bash
+docker run -e OPENROUTER_API_KEY="your-key" your-image
+```
+
+**Kubernetes Secret:**
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openrouter-secret
+type: Opaque
+stringData:
+  api-key: your-api-key-here
+```
+
+### Memory Security Note
+
+API keys are currently stored in plain memory within the `Client` struct. For highly sensitive environments, consider:
+- Using short-lived API keys with automatic rotation
+- Implementing additional encryption at the application level
+- Running in secure, isolated environments
+- Monitoring API usage for anomalies
+
 ## Default Configuration
 
 - **Base URL**: `https://openrouter.ai/api/v1`
@@ -444,9 +542,14 @@ This library has undergone significant improvements to address production readin
 - ✅ **Rate limiting support**: Optional rate limiting via `WithRateLimiter()` to prevent API abuse
 - ✅ **Nil pointer protection**: Fixed `WithTimeout()` to handle nil `httpClient` safely
 
+**MEDIUM Priority:**
+- ✅ **Response body handling optimized**: Standardized to read body once per request for better efficiency
+- ✅ **Test coverage expanded**: Added comprehensive tests for `inference.go` and `generation.go`
+- ✅ **Security documentation added**: Comprehensive API key handling best practices and examples
+
 **Testing:**
-- ✅ **Comprehensive test coverage**: Added 402 lines of new tests covering concurrency, context cancellation, and rate limiting
-- ✅ **All tests passing**: 33 tests pass reliably
+- ✅ **Comprehensive test coverage**: Added 402+ lines of tests across all critical paths
+- ✅ **All tests passing**: 49 tests covering concurrency, context, rate limiting, inference, and generation APIs
 
 ### Breaking Changes
 
@@ -455,13 +558,13 @@ This library has undergone significant improvements to address production readin
 ### Remaining Considerations
 
 **MEDIUM Priority:**
-- API key is stored in plain memory - consider secure handling for sensitive environments
+- API keys are stored in plain memory - see [Security Best Practices](#security-best-practices) for guidance
 - No built-in retry logic for transient network errors (implement at application level if needed)
 
 **LOW Priority:**
-- Additional test coverage could be added for edge cases in inference and generation APIs
+- Additional test coverage could be added for edge cases and error scenarios
 
-The library is now suitable for production use with proper error handling, context management, and optional rate limiting.
+The library is now production-ready with proper error handling, context management, rate limiting, comprehensive test coverage, and security best practices documentation.
 
 ## License
 
