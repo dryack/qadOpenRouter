@@ -1,13 +1,14 @@
 package openrouter
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 )
 
 // GetModelByID finds a model by its ID
-func (c *Client) GetModelByID(id string) (*Model, error) {
-	models, err := c.GetModels()
+func (c *Client) GetModelByID(ctx context.Context, id string) (*Model, error) {
+	models, err := c.GetModels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -22,8 +23,8 @@ func (c *Client) GetModelByID(id string) (*Model, error) {
 }
 
 // GetModelsByProvider returns all models from a specific provider
-func (c *Client) GetModelsByProvider(provider string) ([]Model, error) {
-	models, err := c.GetModels()
+func (c *Client) GetModelsByProvider(ctx context.Context, provider string) ([]Model, error) {
+	models, err := c.GetModels(ctx)
 	if err != nil {
 		return nil, err
 	}

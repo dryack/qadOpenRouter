@@ -1,6 +1,7 @@
 package openrouter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,7 +34,7 @@ type GenerationResponse struct {
 
 // GetGeneration retrieves detailed statistics for a specific generation
 // Use the ID from the ChatCompletionResponse to get actual token counts and costs
-func (c *Client) GetGeneration(generationID string) (*GenerationStats, error) {
+func (c *Client) GetGeneration(ctx context.Context, generationID string) (*GenerationStats, error) {
 	if generationID == "" {
 		return nil, fmt.Errorf("generation ID is required")
 	}
@@ -44,6 +45,9 @@ func (c *Client) GetGeneration(generationID string) (*GenerationStats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
+	// Add context to request
+	req = req.WithContext(ctx)
 
 	// Add API key if provided
 	if c.apiKey != "" {
@@ -76,8 +80,8 @@ func (c *Client) GetGeneration(generationID string) (*GenerationStats, error) {
 }
 
 // GetGenerationCost is a convenience method to get just the cost information
-func (c *Client) GetGenerationCost(generationID string) (float64, error) {
-	stats, err := c.GetGeneration(generationID)
+func (c *Client) GetGenerationCost(ctx context.Context, generationID string) (float64, error) {
+	stats, err := c.GetGeneration(ctx, generationID)
 	if err != nil {
 		return 0, err
 	}

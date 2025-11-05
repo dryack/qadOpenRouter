@@ -1,6 +1,7 @@
 package openrouter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -84,14 +85,14 @@ func NewClient(opts ...ClientOption) *Client {
 
 // GetModels retrieves all available models from OpenRouter
 // Returns cached data if available and not expired
-func (c *Client) GetModels() ([]Model, error) {
+func (c *Client) GetModels(ctx context.Context) ([]Model, error) {
 	// Check cache first
 	if cached, ok := c.cache.Get(); ok {
 		return cached.Models, nil
 	}
 
 	// Fetch from API
-	models, err := c.fetchModels()
+	models, err := c.fetchModels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +104,8 @@ func (c *Client) GetModels() ([]Model, error) {
 }
 
 // GetModelsFresh forces a fresh fetch from the API, bypassing cache
-func (c *Client) GetModelsFresh() ([]Model, error) {
-	models, err := c.fetchModels()
+func (c *Client) GetModelsFresh(ctx context.Context) ([]Model, error) {
+	models, err := c.fetchModels(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -116,13 +117,16 @@ func (c *Client) GetModelsFresh() ([]Model, error) {
 }
 
 // fetchModels performs the actual HTTP request to fetch models
-func (c *Client) fetchModels() ([]Model, error) {
+func (c *Client) fetchModels(ctx context.Context) ([]Model, error) {
 	url := fmt.Sprintf("%s/models", c.baseURL)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
+	// Add context to request
+	req = req.WithContext(ctx)
 
 	// Add API key if provided
 	if c.apiKey != "" {

@@ -2,6 +2,7 @@ package openrouter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -96,7 +97,7 @@ type Usage struct {
 }
 
 // CreateChatCompletion sends a chat completion request
-func (c *Client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+func (c *Client) CreateChatCompletion(ctx context.Context, req ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	if req.Model == "" {
 		return nil, fmt.Errorf("model is required")
 	}
@@ -116,6 +117,9 @@ func (c *Client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+
+	// Add context to request
+	httpReq = httpReq.WithContext(ctx)
 
 	// Set headers
 	if c.apiKey != "" {

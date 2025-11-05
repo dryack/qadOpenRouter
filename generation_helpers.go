@@ -1,17 +1,19 @@
 package openrouter
 
 import (
+	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
 // GetGenerationWithRetry attempts to fetch generation stats with retries
 // Generation stats may not be available immediately after completion
-func (c *Client) GetGenerationWithRetry(generationID string, maxRetries int, retryDelay time.Duration) (*GenerationStats, error) {
+func (c *Client) GetGenerationWithRetry(ctx context.Context, generationID string, maxRetries int, retryDelay time.Duration) (*GenerationStats, error) {
 	var lastErr error
 
 	for i := 0; i < maxRetries; i++ {
-		stats, err := c.GetGeneration(generationID)
+		stats, err := c.GetGeneration(ctx, generationID)
 		if err == nil {
 			return stats, nil
 		}
@@ -26,7 +28,13 @@ func (c *Client) GetGenerationWithRetry(generationID string, maxRetries int, ret
 
 		// Don't sleep after the last attempt
 		if i < maxRetries-1 {
-			time.Sleep(retryDelay)
+			// Use context-aware sleep to allow cancellation
+			select {
+			case <-time.After(retryDelay):
+				// Continue to next retry
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 	}
 
@@ -40,19 +48,5 @@ func isNotFoundError(err error) bool {
 	}
 	// Check if error message contains "404" or "not found"
 	errMsg := err.Error()
-	return contains(errMsg, "404") || contains(errMsg, "not found")
-}
-
-// contains checks if a string contains a substring (case-insensitive check would be better)
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found")
 }
