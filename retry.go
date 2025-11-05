@@ -6,26 +6,61 @@ import (
 	"time"
 )
 
-// RetryConfig holds configuration for retry behavior
+// RetryConfig holds configuration for retry behavior with exponential backoff.
+// The retry logic implements exponential backoff with jitter to avoid thundering herd problems.
+//
+// Example retry delays with default configuration:
+//   - Attempt 1: 1 second
+//   - Attempt 2: 2 seconds
+//   - Attempt 3: 4 seconds
+//   - Attempt 4: 8 seconds (but capped at MaxDelay)
 type RetryConfig struct {
-	// MaxRetries is the maximum number of retry attempts
+	// MaxRetries is the maximum number of retry attempts (not including the initial attempt).
+	// Default: 3 (total of 4 attempts including initial)
 	MaxRetries int
 
-	// InitialDelay is the initial delay before the first retry
+	// InitialDelay is the delay before the first retry.
+	// Default: 1 second
 	InitialDelay time.Duration
 
-	// MaxDelay is the maximum delay between retries
+	// MaxDelay is the maximum delay between retries, preventing extremely long waits.
+	// Default: 30 seconds
 	MaxDelay time.Duration
 
-	// Multiplier is the factor by which the delay increases after each retry
+	// Multiplier is the factor by which the delay increases after each retry.
+	// For example, with a multiplier of 2.0, delays double each time (exponential backoff).
+	// Default: 2.0
 	Multiplier float64
 
-	// ShouldRetry is an optional custom function to determine if an error should be retried
-	// If nil, uses IsRetryableError
+	// ShouldRetry is an optional custom function to determine if an error should be retried.
+	// If nil, uses the built-in IsRetryableError function which handles:
+	//   - Network errors (connection failures, timeouts)
+	//   - HTTP 5xx server errors
+	//   - HTTP 429 rate limit errors
+	//   - HTTP 408 request timeout errors
+	//
+	// Custom example:
+	//   config.ShouldRetry = func(err error) bool {
+	//       return errors.Is(err, MyCustomRetryableError)
+	//   }
 	ShouldRetry func(error) bool
 }
 
 // DefaultRetryConfig returns a retry configuration with sensible defaults
+// for most use cases:
+//   - 3 retries (4 total attempts)
+//   - 1 second initial delay
+//   - 30 second maximum delay
+//   - 2.0x exponential backoff multiplier
+//   - Built-in retry logic for transient errors
+//
+// Example:
+//
+//	config := openrouter.DefaultRetryConfig()
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-key"),
+//		openrouter.WithRetryConfig(&config),
+//	)
 func DefaultRetryConfig() RetryConfig {
 	return RetryConfig{
 		MaxRetries:   3,

@@ -75,15 +75,69 @@ func WithTimeout(timeout time.Duration) ClientOption {
 	}
 }
 
-// WithRateLimiter sets a rate limiter for API calls
-// Example: WithRateLimiter(rate.NewLimiter(rate.Every(time.Second), 10)) // 10 requests per second
+// WithRateLimiter sets a rate limiter for API calls to control request throughput.
+// Rate limiting helps prevent hitting API rate limits and manages request concurrency.
+//
+// Example:
+//
+//	// Allow 10 requests per second with burst of 10
+//	limiter := rate.NewLimiter(rate.Every(time.Second), 10)
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-key"),
+//		openrouter.WithRateLimiter(limiter),
+//	)
 func WithRateLimiter(limiter *rate.Limiter) ClientOption {
 	return func(c *Client) {
 		c.rateLimiter = limiter
 	}
 }
 
-// NewClient creates a new OpenRouter API client
+// WithRetryConfig sets custom retry behavior for transient errors.
+// If not set, retry logic is disabled by default. Use DefaultRetryConfig()
+// for sensible defaults, or customize for your needs.
+//
+// The retry logic handles:
+//   - Network errors (connection failures, timeouts)
+//   - HTTP 5xx server errors
+//   - HTTP 429 rate limit errors
+//   - HTTP 408 request timeout errors
+//
+// Example:
+//
+//	config := openrouter.DefaultRetryConfig()
+//	config.MaxRetries = 5
+//	config.InitialDelay = 2 * time.Second
+//	config.MaxDelay = 60 * time.Second
+//
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-key"),
+//		openrouter.WithRetryConfig(&config),
+//	)
+func WithRetryConfig(config *RetryConfig) ClientOption {
+	return func(c *Client) {
+		c.retryConfig = config
+	}
+}
+
+// NewClient creates a new OpenRouter API client with the specified options.
+// Returns a client configured with sensible defaults that can be overridden
+// via functional options.
+//
+// Default configuration:
+//   - Base URL: https://openrouter.ai/api/v1
+//   - HTTP Timeout: 30 seconds
+//   - Cache TTL: 1 hour
+//   - No rate limiting
+//   - No retry logic
+//   - No logging
+//
+// Example:
+//
+//	client := openrouter.NewClient(
+//		openrouter.WithAPIKey("your-api-key"),
+//		openrouter.WithTimeout(60 * time.Second),
+//		openrouter.WithStandardLogger(true, true),
+//	)
 func NewClient(opts ...ClientOption) *Client {
 	client := &Client{
 		baseURL: DefaultBaseURL,
