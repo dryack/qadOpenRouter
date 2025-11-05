@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
 
 	openrouter "github.com/dryack/openRouterPricing"
+	// "golang.org/x/time/rate" // Uncomment if using rate limiting
 )
 
 func main() {
@@ -13,16 +15,22 @@ func main() {
 	client := openrouter.NewClient()
 
 	// Or create a client with custom options
+	// limiter := rate.NewLimiter(rate.Every(time.Second), 10) // 10 requests per second
 	// client := openrouter.NewClient(
 	// 	openrouter.WithCacheTTL(30 * time.Minute),
 	// 	openrouter.WithTimeout(10 * time.Second),
 	// 	openrouter.WithAPIKey("your-api-key"), // Optional
+	// 	openrouter.WithRateLimiter(limiter),   // Optional rate limiting
 	// )
+
+	// Create a context with timeout for all API calls
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	fmt.Println("Fetching OpenRouter models...")
 
 	// Get all models (uses cache if available)
-	models, err := client.GetModels()
+	models, err := client.GetModels(ctx)
 	if err != nil {
 		log.Fatalf("Error fetching models: %v", err)
 	}
@@ -36,7 +44,7 @@ func main() {
 
 	// Example 1: Find a specific model
 	fmt.Println("=== Example 1: Find specific model ===")
-	model, err := client.GetModelByID("openai/gpt-4")
+	model, err := client.GetModelByID(ctx, "openai/gpt-4")
 	if err != nil {
 		log.Printf("Model not found: %v", err)
 	} else {
@@ -45,7 +53,7 @@ func main() {
 
 	// Example 2: Get all models from a provider
 	fmt.Println("\n=== Example 2: Models from Anthropic ===")
-	anthropicModels, err := client.GetModelsByProvider("anthropic")
+	anthropicModels, err := client.GetModelsByProvider(ctx, "anthropic")
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
@@ -88,7 +96,7 @@ func main() {
 	// Example 4: Force fresh fetch
 	fmt.Println("\n=== Example 4: Force refresh ===")
 	fmt.Println("Fetching fresh data from API...")
-	freshModels, err := client.GetModelsFresh()
+	freshModels, err := client.GetModelsFresh(ctx)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}

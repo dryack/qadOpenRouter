@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -51,6 +52,9 @@ func main() {
 		openrouter.WithAPIKey(apiKey),
 	)
 
+	// Create context with timeout for all API calls
+	ctx := context.Background()
+
 	// Example 1: Simple chat completion
 	fmt.Println("Example 1: Simple Question")
 	fmt.Println("----------------------------")
@@ -64,7 +68,7 @@ func main() {
 
 	displayRequest(req)
 
-	resp, err := client.CreateChatCompletion(req)
+	resp, err := client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
@@ -83,7 +87,7 @@ func main() {
 	// Note: Stats may take a few seconds to become available
 	fmt.Println("\nFetching actual cost data (this may take a few seconds)...")
 
-	stats, err := client.GetGenerationWithRetry(resp.ID, 5, 2*time.Second)
+	stats, err := client.GetGenerationWithRetry(ctx, resp.ID, 5, 2*time.Second)
 	if err != nil {
 		log.Printf("Warning: Could not fetch generation stats: %v", err)
 		log.Printf("This is normal - generation stats may not be available immediately.")
@@ -111,7 +115,7 @@ func main() {
 
 	displayRequest(conversationReq)
 
-	convResp, err := client.CreateChatCompletion(conversationReq)
+	convResp, err := client.CreateChatCompletion(ctx, conversationReq)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
@@ -126,7 +130,7 @@ func main() {
 	fmt.Printf("  Total tokens: %d\n", convResp.Usage.TotalTokens)
 
 	// Get actual cost
-	if convStats, err := client.GetGenerationWithRetry(convResp.ID, 5, 2*time.Second); err == nil {
+	if convStats, err := client.GetGenerationWithRetry(ctx, convResp.ID, 5, 2*time.Second); err == nil {
 		fmt.Printf("\nCost: $%.6f (Provider: %s)\n", convStats.TotalCost, convStats.ProviderName)
 	}
 
@@ -148,7 +152,7 @@ func main() {
 
 	displayRequest(paramReq)
 
-	paramResp, err := client.CreateChatCompletion(paramReq)
+	paramResp, err := client.CreateChatCompletion(ctx, paramReq)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
@@ -164,7 +168,7 @@ func main() {
 		paramResp.Usage.TotalTokens, maxTokens)
 
 	// Get actual cost
-	if paramStats, err := client.GetGenerationWithRetry(paramResp.ID, 5, 2*time.Second); err == nil {
+	if paramStats, err := client.GetGenerationWithRetry(ctx, paramResp.ID, 5, 2*time.Second); err == nil {
 		fmt.Printf("\nCost: $%.6f (Provider: %s)\n", paramStats.TotalCost, paramStats.ProviderName)
 	}
 
@@ -182,7 +186,7 @@ func main() {
 
 	displayRequest(testReq)
 
-	testResp, err := client.CreateChatCompletion(testReq)
+	testResp, err := client.CreateChatCompletion(ctx, testReq)
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
@@ -193,7 +197,7 @@ func main() {
 
 	// Calculate estimated cost
 	var estimatedCost float64
-	modelInfo, err := client.GetModelByID(testModel)
+	modelInfo, err := client.GetModelByID(ctx, testModel)
 	if err == nil {
 		promptCost, _ := openrouter.CalculatePromptCost(*modelInfo, testResp.Usage.PromptTokens)
 		completionCost, _ := openrouter.CalculateCompletionCost(*modelInfo, testResp.Usage.CompletionTokens)
@@ -203,7 +207,7 @@ func main() {
 	}
 
 	// Get actual cost
-	if testStats, err := client.GetGenerationWithRetry(testResp.ID, 5, 2*time.Second); err == nil {
+	if testStats, err := client.GetGenerationWithRetry(ctx, testResp.ID, 5, 2*time.Second); err == nil {
 		fmt.Printf("Actual Cost: $%.6f\n", testStats.TotalCost)
 		if estimatedCost > 0 {
 			diff := testStats.TotalCost - estimatedCost

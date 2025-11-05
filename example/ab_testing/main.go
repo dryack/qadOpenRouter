@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +19,9 @@ func main() {
 	}
 
 	fmt.Println("=== OpenRouter A/B Testing Demo ===\n")
+
+	// Create context for all API calls
+	ctx := context.Background()
 
 	// Create client with API key
 	client := openrouter.NewClient(
@@ -50,7 +54,7 @@ func main() {
 		for i, prompt := range testPrompts {
 			fmt.Printf("  Prompt %d/%d: ", i+1, len(testPrompts))
 
-			result := runInference(client, model, prompt)
+			result := runInference(ctx, client, model, prompt)
 			tracker.Record(result)
 
 			if result.Error != nil {
@@ -98,7 +102,7 @@ func main() {
 }
 
 // runInference performs a single inference and tracks costs
-func runInference(client *openrouter.Client, model, prompt string) openrouter.InferenceResult {
+func runInference(ctx context.Context, client *openrouter.Client, model, prompt string) openrouter.InferenceResult {
 	result := openrouter.InferenceResult{
 		Model:     model,
 		Prompt:    prompt,
@@ -117,7 +121,7 @@ func runInference(client *openrouter.Client, model, prompt string) openrouter.In
 	}
 
 	// Execute inference
-	resp, err := client.CreateChatCompletion(req)
+	resp, err := client.CreateChatCompletion(ctx, req)
 	result.Latency = time.Since(start)
 
 	if err != nil {
@@ -139,7 +143,7 @@ func runInference(client *openrouter.Client, model, prompt string) openrouter.In
 	result.GenerationID = resp.ID
 
 	// Calculate estimated cost from pricing data
-	modelInfo, err := client.GetModelByID(model)
+	modelInfo, err := client.GetModelByID(ctx, model)
 	if err == nil {
 		promptCost, _ := openrouter.CalculatePromptCost(*modelInfo, result.PromptTokens)
 		completionCost, _ := openrouter.CalculateCompletionCost(*modelInfo, result.CompletionTokens)
@@ -148,7 +152,7 @@ func runInference(client *openrouter.Client, model, prompt string) openrouter.In
 
 	// Get actual cost from generation stats
 	// Note: Stats may take a few seconds to become available, using retry logic
-	stats, err := client.GetGenerationWithRetry(resp.ID, 3, 1*time.Second)
+	stats, err := client.GetGenerationWithRetry(ctx, resp.ID, 3, 1*time.Second)
 	if err == nil {
 		result.ActualCost = stats.TotalCost
 	} else {

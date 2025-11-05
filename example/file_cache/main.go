@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,9 @@ const cacheFilePath = "openrouter_cache.json"
 
 func main() {
 	fmt.Println("=== File-Based Cache Example ===\n")
+
+	// Create context for API calls
+	ctx := context.Background()
 
 	// Create a new client
 	client := openrouter.NewClient(
@@ -27,7 +31,7 @@ func main() {
 		fmt.Println("Fetching fresh data from API...")
 
 		// Fetch fresh data if cache file doesn't exist or is expired
-		models, err := client.GetModelsFresh()
+		models, err := client.GetModelsFresh(ctx)
 		if err != nil {
 			log.Fatalf("Error fetching models: %v", err)
 		}
@@ -46,7 +50,7 @@ func main() {
 		fmt.Println("✓ Successfully loaded cache from file!")
 
 		// Get models from in-memory cache (loaded from file)
-		models, err := client.GetModels()
+		models, err := client.GetModels(ctx)
 		if err != nil {
 			log.Fatalf("Error getting models: %v", err)
 		}
@@ -57,7 +61,7 @@ func main() {
 
 	// Display some model information
 	fmt.Println("\n=== Sample Models ===")
-	models, _ := client.GetModels()
+	models, _ := client.GetModels(ctx)
 
 	// Show first 5 models
 	count := 5
