@@ -2,7 +2,7 @@
 
 A comprehensive Go package for interacting with the OpenRouter API, featuring model pricing, chat completions, and cost tracking for A/B testing.
 
-> ⚠️ **Production Readiness Update**: Recent improvements have addressed critical issues (concurrency deadlock, context support, rate limiting). See [Production Readiness](#production-readiness) for details.
+(99.99999% Claude Code created AI slop - so far it does exactly what I want, took almost no effort, and allowed me to focus on more important things.  It might work for you, or might now.  Be careful please.)
 
 ## ⚠️ Breaking Changes in v2.0
 
